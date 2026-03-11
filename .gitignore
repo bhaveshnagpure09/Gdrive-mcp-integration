@@ -37,6 +37,11 @@ ENV/
 .env
 .env.local
 
+# Google Drive OAuth credentials (never commit these)
+credentials.json
+client_secret.json
+token.json
+
 # Database
 *.db
 *.sqlite3

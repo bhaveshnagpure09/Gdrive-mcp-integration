@@ -23,7 +23,7 @@ import app.db.models  # noqa: F401
 config = context.config
 
 # Set the sqlalchemy.url from settings
-config.set_main_option("sqlalchemy.url", settings.database_url)
+config.set_main_option("sqlalchemy.url", settings.get_database_url())
 
 # Interpret the config file for Python logging
 if config.config_file_name is not None:

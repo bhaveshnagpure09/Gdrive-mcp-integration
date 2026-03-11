@@ -23,10 +23,23 @@ def process_requisition_with_graph(correlation_id: str, request: RequisitionRequ
         logger.info(f"Starting graph processing for correlation_id={correlation_id}")
         
         # Prepare initial state
+        jd = request.job_description
         initial_state = {
             "requisition_input": {
                 "request_id": request_id,
-                "job_description": request.job_description.jd_text,
+                "job_description": {
+                    "title": jd.title,
+                    "role": jd.role,
+                    "jd_text": jd.jd_text,
+                    "mandatory_skills": jd.mandatory_skills or [],
+                    "preferred_skills": jd.preferred_skills or [],
+                    "expected_start_date": str(jd.expected_start_date) if jd.expected_start_date else None,
+                    "requisition_duration_month": jd.requisition_duration_month,
+                    "experience": {
+                        "min_months": jd.experience.min_months if jd.experience else None,
+                        "max_months": jd.experience.max_months if jd.experience else None,
+                    },
+                },
                 "requested_team_ids": [],  # TODO: Add team filtering support
                 "min_availability_percentage": 50,  # Default value
                 "correlation_id": correlation_id,

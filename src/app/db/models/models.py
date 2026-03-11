@@ -237,3 +237,23 @@ class LangGraphCheckpoint(Base):
 
     # Relationships
     request = relationship("RequisitionRequest", back_populates="checkpoints")
+
+
+class TeamMemberEmbedding(Base):
+    """Vector embeddings for team member profiles, used for AI-based candidate matching."""
+
+    __tablename__ = "team_member_embeddings"
+
+    team_member_id = Column(
+        String(50),
+        ForeignKey("team_member.team_member_id"),
+        primary_key=True,
+    )
+    # Stored as a JSON-encoded float array; the Alembic migration creates the actual vector column
+    embedding = Column(String, nullable=False)
+    profile_text = Column(String, nullable=False)
+    metadata_json = Column(JSON, nullable=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    # Relationships
+    team_member = relationship("TeamMember", backref="embeddings")

@@ -53,8 +53,9 @@ def result_aggregation_node(state: GraphState) -> GraphState:
         explanation = []
         
         # Add overall score explanation
+        match_pct = candidate.get("match_percentage", round(candidate["final_score"] * 100, 1))
         explanation.append(
-            f"Overall match score: {candidate['final_score']:.2f} ({fit_level} fit)"
+            f"Overall match: {match_pct:.1f}% ({fit_level} fit)"
         )
         
         # Add skill match details
@@ -71,6 +72,11 @@ def result_aggregation_node(state: GraphState) -> GraphState:
         experience_score = candidate.get("experience_score", 0.0)
         explanation.append(f"Experience match score: {experience_score:.2f}")
         
+        # Add vector/semantic similarity if available
+        vec_sim = candidate.get("vector_similarity", 0.0)
+        if vec_sim > 0:
+            explanation.append(f"Resume semantic similarity: {vec_sim * 100:.1f}%")
+
         # Add availability details
         is_available = candidate.get("is_available", False)
         availability_score = candidate.get("availability_score", 0.0)
@@ -83,7 +89,8 @@ def result_aggregation_node(state: GraphState) -> GraphState:
         # Create result entry
         result_entry = {
             "team_member_id": candidate["team_member_id"],
-            "profile_score": candidate["final_score"],
+            "match_percentage": candidate.get("match_percentage", round(candidate["final_score"] * 100, 1)),
+            "profile_score": round(candidate["final_score"], 4),
             "fit_level": fit_level,
             "availability_match": is_available,
             "explanation": explanation,

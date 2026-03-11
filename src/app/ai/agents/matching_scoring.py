@@ -8,7 +8,9 @@ from app.ai.availability import evaluate_availability
 from app.ai.scoring import calculate_candidate_score
 from app.ai.state import GraphState
 from app.db.models import TeamMember, TeamMemberSkill
+from app.db.repositories.embedding_repository import EmbeddingRepository
 from app.db.session import SessionLocal
+from app.services.embedding_generator import EmbeddingGenerator
 
 logger = logging.getLogger(__name__)
 
@@ -56,9 +58,28 @@ def matching_scoring_node(state: GraphState) -> GraphState:
     db: Session = SessionLocal()
     try:
         team_members = db.query(TeamMember).filter(TeamMember.is_active == True).all()
-        
+
         logger.info(f"Found {len(team_members)} active team members to evaluate")
-        
+
+        # --- Vector similarity: generate JD embedding and compare to stored resume embeddings ---
+        vector_similarity_map: dict[str, float] = {}
+        try:
+            jd_info = requisition_input.get("job_description", {})
+            jd_text = (
+                jd_info.get("jd_text", "") if isinstance(jd_info, dict) else str(jd_info)
+            )
+            if jd_text:
+                embedder = EmbeddingGenerator()
+                jd_embedding = embedder.generate(jd_text)
+                embedding_repo = EmbeddingRepository(db)
+                similar = embedding_repo.find_similar_by_vector(jd_embedding, top_k=50)
+                vector_similarity_map = {tid: sim for tid, sim in similar}
+                logger.info(
+                    f"Vector similarity computed for {len(vector_similarity_map)} members"
+                )
+        except Exception as e:
+            logger.warning(f"JD embedding/similarity failed, skipping: {e}")
+
         candidate_scores = []
         
         for member in team_members:
@@ -80,7 +101,7 @@ def matching_scoring_node(state: GraphState) -> GraphState:
                     threshold_percentage=80.0,
                 )
                 
-                # Calculate complete candidate score
+                # Calculate complete candidate score (include vector similarity if available)
                 score_result = calculate_candidate_score(
                     team_member_id=member.team_member_id,
                     team_member_skill_ids=member_skill_ids,
@@ -91,6 +112,7 @@ def matching_scoring_node(state: GraphState) -> GraphState:
                     max_experience_months=max_experience_months,
                     is_available=availability_result["is_available"],
                     available_capacity=availability_result["available_capacity"],
+                    vector_similarity=vector_similarity_map.get(member.team_member_id, 0.0),
                 )
                 
                 candidate_scores.append(score_result)

@@ -142,13 +142,13 @@ def test_calculate_experience_score_only_minimum():
 
 
 def test_calculate_final_score_default_weights():
-    """Test final score calculation with default weights."""
+    """Test final score calculation with default weights (40% skill + 40% vector + 20% exp)."""
     final_score = calculate_final_score(
         skill_score=0.8,
         experience_score=0.6,
     )
-    
-    assert final_score == 0.8 * 0.8 + 0.2 * 0.6
+    # vector_similarity defaults to 0.0; formula: 0.4*skill + 0.4*vector + 0.2*exp
+    assert final_score == pytest.approx(0.4 * 0.8 + 0.4 * 0.0 + 0.2 * 0.6)
 
 
 def test_calculate_final_score_custom_weights():
@@ -181,7 +181,9 @@ def test_calculate_candidate_score_full_match():
     assert result["skill_score"] == 1.0  # All skills matched
     assert result["experience_score"] == 1.0  # Within range
     assert result["availability_score"] == 0.5  # 50/100
-    assert result["final_score"] == 1.0  # 0.8 * 1.0 + 0.2 * 1.0
+    # No vector_similarity provided (defaults 0.0): 0.4*1.0 + 0.4*0.0 + 0.2*1.0 = 0.6
+    assert result["final_score"] == pytest.approx(0.6)
+    assert result["match_percentage"] == pytest.approx(60.0)
     assert result["is_available"] is True
     assert set(result["match_reasons"]["mandatory_matched"]) == {"PYTHON", "FASTAPI"}
     assert result["match_reasons"]["preferred_matched"] == ["DOCKER"]
@@ -226,4 +228,6 @@ def test_calculate_candidate_score_no_skills_required():
     
     assert result["skill_score"] == 1.0
     assert result["experience_score"] == 1.0
-    assert result["final_score"] == 1.0
+    # No vector_similarity (defaults 0.0): 0.4*1.0 + 0.4*0.0 + 0.2*1.0 = 0.6
+    assert result["final_score"] == pytest.approx(0.6)
+    assert result["match_percentage"] == pytest.approx(60.0)

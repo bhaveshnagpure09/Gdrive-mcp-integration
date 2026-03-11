@@ -6,7 +6,9 @@ from typing import Optional
 # Configurable weights
 SKILL_WEIGHT_MANDATORY = 0.7
 SKILL_WEIGHT_PREFERRED = 0.3
-FINAL_SCORE_SKILL_WEIGHT = 0.8
+# Blended final score: 40% skill, 40% vector similarity, 20% experience
+FINAL_SCORE_SKILL_WEIGHT = 0.4
+FINAL_SCORE_VECTOR_WEIGHT = 0.4
 FINAL_SCORE_EXPERIENCE_WEIGHT = 0.2
 
 
@@ -113,22 +115,30 @@ def calculate_experience_score(
 def calculate_final_score(
     skill_score: float,
     experience_score: float,
+    vector_similarity: float = 0.0,
     skill_weight: float = FINAL_SCORE_SKILL_WEIGHT,
+    vector_weight: float = FINAL_SCORE_VECTOR_WEIGHT,
     experience_weight: float = FINAL_SCORE_EXPERIENCE_WEIGHT,
 ) -> float:
     """Calculate final aggregated score for a candidate.
-    
+
     Args:
         skill_score: Skill matching score (0.0 to 1.0)
         experience_score: Experience matching score (0.0 to 1.0)
-        skill_weight: Weight for skill score (default 0.8)
+        vector_similarity: Cosine similarity between JD and resume embeddings (0.0–1.0)
+        skill_weight: Weight for skill score (default 0.4)
+        vector_weight: Weight for vector similarity (default 0.4)
         experience_weight: Weight for experience score (default 0.2)
-    
+
     Returns:
         Final score (0.0 to 1.0)
     """
-    final_score = (skill_weight * skill_score) + (experience_weight * experience_score)
-    return final_score
+    final_score = (
+        skill_weight * skill_score
+        + vector_weight * vector_similarity
+        + experience_weight * experience_score
+    )
+    return min(final_score, 1.0)
 
 
 def calculate_candidate_score(
@@ -141,6 +151,7 @@ def calculate_candidate_score(
     max_experience_months: Optional[int],
     is_available: bool,
     available_capacity: float,
+    vector_similarity: float = 0.0,
 ) -> dict:
     """Calculate complete candidate score.
     
@@ -174,18 +185,21 @@ def calculate_candidate_score(
         max_experience_months,
     )
     
-    # Calculate final score
+    # Calculate final blended score (skill + vector similarity + experience)
     final_score = calculate_final_score(
         skill_result["skill_score"],
         experience_score,
+        vector_similarity=vector_similarity,
     )
-    
+
     return {
         "team_member_id": team_member_id,
         "skill_score": skill_result["skill_score"],
         "experience_score": experience_score,
-        "availability_score": available_capacity / 100.0,  # Normalize to 0-1
+        "vector_similarity": vector_similarity,
+        "availability_score": available_capacity / 100.0,
         "final_score": final_score,
+        "match_percentage": round(final_score * 100, 1),
         "is_available": is_available,
         "match_reasons": {
             "skills_matched": skill_result["matched_mandatory"] + skill_result["matched_preferred"],

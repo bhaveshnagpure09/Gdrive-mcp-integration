@@ -12,6 +12,7 @@ from app.db.models.models import (
     SkillMaster,
     TeamMember,
     TeamMemberAllocation,
+    TeamMemberEmbedding,
     TeamMemberSkill,
     WorkTypeEnum,
 )
@@ -28,6 +29,7 @@ __all__ = [
     "SkillMaster",
     "TeamMember",
     "TeamMemberAllocation",
+    "TeamMemberEmbedding",
     "TeamMemberSkill",
     "WorkTypeEnum",
 ]
