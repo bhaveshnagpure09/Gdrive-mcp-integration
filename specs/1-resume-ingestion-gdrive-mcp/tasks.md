@@ -30,8 +30,8 @@
 
 ## Phase 4: Deployment
 
-- [ ] T017 Deploy the feature branch to staging.
-- [ ] T018 Validate functionality in staging.
+- [X] T017 Deploy the feature branch to staging.
+- [X] T018 Validate functionality in staging.
 - [ ] T019 Merge to `master` after approval.
 
 ## Risks & Mitigation
