@@ -1,0 +1,54 @@
+# .dockerignore — exclude files from the Docker build context
+
+# Python caches
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+
+# Virtual environment
+.venv/
+venv/
+env/
+
+# Test / CI artifacts
+.pytest_cache/
+.coverage
+htmlcov/
+coverage.xml
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+
+# Secrets and credentials (never bake into image)
+.env
+.env.*
+credentials.json
+client_secret.json
+token.json
+
+# Git
+.git/
+.gitignore
+
+# Docs and specs (not needed at runtime)
+docs/
+specs/
+specs-data/
+prompts/
+performance-tests/
+scripts/
+
+# Terraform / infra
+infra/
+
+# Logs
+*.log
