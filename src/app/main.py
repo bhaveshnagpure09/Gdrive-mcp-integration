@@ -3,6 +3,7 @@
 import logging
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routers import health, jd_skill_mapping, matches, metrics, skill_availability
 from app.api.endpoints import resume_ingestion
@@ -30,6 +31,20 @@ app.add_middleware(
 
 # Add middleware for correlation ID tracking
 app.add_middleware(CorrelationIdMiddleware)
+
+# CORS — must be added last so it is the outermost middleware (Starlette LIFO).
+# Allows the Next.js UI (localhost:3000) and any staging/prod origin to call the API.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://localhost:8001",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 logger.info("Application starting", extra={
     "project": settings.project_name,

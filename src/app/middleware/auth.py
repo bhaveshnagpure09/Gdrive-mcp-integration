@@ -56,6 +56,10 @@ class OAuth2Middleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         """Validate OAuth2 token for incoming requests."""
         
+        # Skip authentication for CORS preflight requests
+        if request.method == "OPTIONS":
+            return await call_next(request)
+
         # Skip authentication for exempt paths
         if any(request.url.path.startswith(path) for path in self.EXEMPT_PATHS):
             return await call_next(request)
