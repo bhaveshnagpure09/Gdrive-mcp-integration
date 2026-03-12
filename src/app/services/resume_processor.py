@@ -40,19 +40,21 @@ class ResumeProcessor:
     # Public API
     # ------------------------------------------------------------------
 
-    def process_single(self, doc_id: str, storage_source: str = "gdrive") -> ProcessedResume:
+    def process_single(self, doc_id: str, storage_source: str = "gdrive", mime_type: Optional[str] = None) -> ProcessedResume:
         """Fetch and process a single resume document.
 
         Args:
             doc_id: Google Drive document ID.
             storage_source: Label for the storage origin (stored in metadata).
+            mime_type: MIME type of the file; forwarded to the MCP client for
+                       correct extraction (PDF, DOCX, Google Doc).
 
         Returns:
             :class:`ProcessedResume` — check ``result.success`` before using.
         """
         logger.info("Processing single resume", extra={"doc_id": doc_id})
         try:
-            raw_text = self.mcp_client.fetch_resume(doc_id)
+            raw_text = self.mcp_client.fetch_resume(doc_id, mime_type=mime_type)
         except GDriveError as exc:
             logger.error("Failed to fetch resume from Google Drive", extra={"doc_id": doc_id, "error": str(exc)})
             return ProcessedResume(doc_id=doc_id, profile_text="", scrubbed_text="", error=str(exc))

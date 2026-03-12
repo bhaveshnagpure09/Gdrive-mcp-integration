@@ -90,3 +90,27 @@ class RequisitionRepository:
             if completed_at:
                 req.completed_at = completed_at
             self.db.flush()
+
+    def save_match_results(self, correlation_id: str, results: list) -> None:
+        """Persist match results to DB so all workers can read them."""
+        req = (
+            self.db.query(RequisitionRequestModel)
+            .filter(RequisitionRequestModel.correlation_id == correlation_id)
+            .first()
+        )
+        if req:
+            req.match_results = results
+            req.processing_status = "COMPLETED"
+            req.completed_at = datetime.utcnow()
+            self.db.flush()
+
+    def get_match_results(self, correlation_id: str) -> Optional[list]:
+        """Retrieve persisted match results from DB."""
+        req = (
+            self.db.query(RequisitionRequestModel)
+            .filter(RequisitionRequestModel.correlation_id == correlation_id)
+            .first()
+        )
+        if req is None:
+            return None
+        return req.match_results  # None = still processing, list = done

@@ -2,13 +2,14 @@
 
 import logging
 import os
+import re
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from app.core.mcp_client import GoogleDriveMCPClient, GDriveError
+from app.core.mcp_client import GoogleDriveMCPClient, GDriveError, extract_drive_id
 from app.core.pii_scrubber import PIIScrubber
 from app.db.models.models import TeamMember as TeamMemberModel
 from app.db.repositories.embedding_repository import EmbeddingRepository
@@ -33,10 +34,12 @@ class ResumeIngestionRequest(BaseModel):
     team_member_id: Optional[str] = None  # system ID; defaults to doc_id if omitted
     fetch_all: Optional[bool] = False
     storage: str
+    folder_id: Optional[str] = None  # GDrive folder ID; None = entire Drive
 
 
 class IngestionResult(BaseModel):
     ingested: int
+    skipped: int = 0
     failed: int
     details: list[dict]
 
@@ -88,6 +91,9 @@ def _ingest_one(
     *,
     doc_id: str,
     team_member_id: Optional[str],
+    file_name: Optional[str] = None,
+    mime_type: Optional[str] = None,
+    modified_time: Optional[str] = None,
     processor: ResumeProcessor,
     embedder: EmbeddingGenerator,
     repo: EmbeddingRepository,
@@ -95,9 +101,36 @@ def _ingest_one(
     storage: str,
 ) -> dict:
     """Run the full pipeline for a single document. Returns a status dict."""
-    result = processor.process_single(doc_id=doc_id, storage_source=storage)
+    base = {"doc_id": doc_id, "file_name": file_name or doc_id}
+
+    # ------------------------------------------------------------------ #
+    # Idempotency pre-check: skip if already ingested and file unchanged   #
+    # ------------------------------------------------------------------ #
+    existing = repo.get_by_source_doc_id(doc_id)
+    is_update = False
+    if existing:
+        stored_modified_time = (existing.metadata_json or {}).get("modified_time")
+        if modified_time and stored_modified_time and stored_modified_time == modified_time:
+            # File has not changed since last ingestion — skip
+            return {
+                **base,
+                "status": "already_ingested",
+                "team_member_id": existing.team_member_id,
+                "extracted_name": (existing.metadata_json or {}).get("extracted_name", ""),
+                "skills_found": len((existing.metadata_json or {}).get("skills", [])),
+                "experience_months": (existing.metadata_json or {}).get("experience_months"),
+                "reason": "Skipped — no changes since last ingestion",
+            }
+        # modified_time differs (or unknown) → will re-ingest
+        is_update = True
+        logger.info(
+            "Resume changed since last ingestion, re-ingesting",
+            extra={"doc_id": doc_id, "stored_mt": stored_modified_time, "new_mt": modified_time},
+        )
+
+    result = processor.process_single(doc_id=doc_id, storage_source=storage, mime_type=mime_type)
     if not result.success:
-        return {"doc_id": doc_id, "status": "failed", "reason": result.error}
+        return {**base, "status": "failed", "reason": result.error}
 
     # Resolve team_member_id: provided > extracted from resume > fallback to doc_id
     effective_member_id = (
@@ -112,17 +145,19 @@ def _ingest_one(
     except Exception as exc:
         db.rollback()
         logger.error("Failed to upsert team_member", extra={"team_member_id": effective_member_id, "error": str(exc)})
-        return {"doc_id": doc_id, "status": "failed", "reason": f"Team member upsert error: {exc}"}
+        return {**base, "status": "failed", "reason": f"Team member upsert error: {exc}"}
 
     try:
         embedding = embedder.generate(result.profile_text)
     except Exception as exc:
         logger.error("Embedding generation failed", extra={"doc_id": doc_id, "error": str(exc)})
-        return {"doc_id": doc_id, "status": "failed", "reason": f"Embedding error: {exc}"}
+        return {**base, "status": "failed", "reason": f"Embedding error: {exc}"}
 
     # Build rich metadata with all parsed fields
     rich_metadata = {
         **result.metadata,
+        "source_doc_id": doc_id,
+        "modified_time": modified_time,
         "extracted_name": result.parsed_fields.get("name", ""),
         "designation": result.parsed_fields.get("designation", ""),
         "experience_months": result.parsed_fields.get("experience_months", 0),
@@ -141,11 +176,11 @@ def _ingest_one(
     except Exception as exc:
         db.rollback()
         logger.error("DB insertion failed", extra={"doc_id": doc_id, "error": str(exc)})
-        return {"doc_id": doc_id, "status": "failed", "reason": f"DB error: {exc}"}
+        return {**base, "status": "failed", "reason": f"DB error: {exc}"}
 
     return {
-        "doc_id": doc_id,
-        "status": "ok",
+        **base,
+        "status": "updated" if is_update else "ok",
         "team_member_id": effective_member_id,
         "extracted_name": result.parsed_fields.get("name", ""),
         "skills_found": len(result.parsed_fields.get("skills", [])),
@@ -180,6 +215,12 @@ async def ingest_resume(
             detail="Provide either 'doc_id' or set 'fetch_all' to true.",
         )
 
+    # Strip full GDrive URLs to bare IDs (safety net for both fields)
+    if request.folder_id:
+        request.folder_id = extract_drive_id(request.folder_id)
+    if request.doc_id:
+        request.doc_id = extract_drive_id(request.doc_id)
+
     mcp_client = _build_mcp_client()
     processor = ResumeProcessor(mcp_client=mcp_client)
     embedder = EmbeddingGenerator()
@@ -190,7 +231,7 @@ async def ingest_resume(
     if request.fetch_all:
         # Batch: process all documents from the selected storage
         try:
-            files = mcp_client.list_resumes()
+            files = mcp_client.list_resumes(folder_id=request.folder_id)
         except GDriveError as exc:
             raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
 
@@ -199,6 +240,9 @@ async def ingest_resume(
             item = _ingest_one(
                 doc_id=doc_id,
                 team_member_id=None,  # batch mode: extract from resume
+                file_name=f.get("name", ""),
+                mime_type=f.get("mimeType"),
+                modified_time=f.get("modifiedTime"),
                 processor=processor,
                 embedder=embedder,
                 repo=repo,
@@ -207,9 +251,22 @@ async def ingest_resume(
             )
             details.append(item)
     else:
+        # Single doc: fetch modifiedTime from Drive so idempotency check works
+        modified_time: Optional[str] = None
+        single_mime: Optional[str] = None
+        try:
+            file_info = mcp_client.get_file_info(request.doc_id)
+            modified_time = file_info.get("modifiedTime")
+            single_mime = file_info.get("mimeType")
+        except Exception as exc:
+            logger.warning("Could not fetch file info for idempotency check", extra={"doc_id": request.doc_id, "error": str(exc)})
+
         item = _ingest_one(
             doc_id=request.doc_id,
             team_member_id=request.team_member_id,  # None → auto-extracted
+            file_name=None,
+            mime_type=single_mime,
+            modified_time=modified_time,
             processor=processor,
             embedder=embedder,
             repo=repo,
@@ -218,6 +275,7 @@ async def ingest_resume(
         )
         details.append(item)
 
-    ingested = sum(1 for d in details if d["status"] == "ok")
-    failed = len(details) - ingested
-    return IngestionResult(ingested=ingested, failed=failed, details=details)
+    ingested = sum(1 for d in details if d["status"] in ("ok", "updated"))
+    skipped = sum(1 for d in details if d["status"] == "already_ingested")
+    failed = len(details) - ingested - skipped
+    return IngestionResult(ingested=ingested, skipped=skipped, failed=failed, details=details)

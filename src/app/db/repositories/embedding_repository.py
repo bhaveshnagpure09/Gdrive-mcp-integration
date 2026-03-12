@@ -78,6 +78,22 @@ class EmbeddingRepository:
             .first()
         )
 
+    def get_by_source_doc_id(self, doc_id: str) -> Optional[TeamMemberEmbedding]:
+        """Return the embedding record whose metadata_json.source_doc_id matches, or None.
+
+        Uses a parameterised raw SQL snippet for the PostgreSQL ->> operator so
+        the query works regardless of SQLAlchemy ORM version.
+        """
+        from sqlalchemy import text  # noqa: PLC0415
+        return (
+            self.db.query(TeamMemberEmbedding)
+            .filter(
+                text("metadata_json->>'source_doc_id' = :doc_id")
+            )
+            .params(doc_id=doc_id)
+            .first()
+        )
+
     def find_similar_by_vector(
         self,
         query_vector: list[float],

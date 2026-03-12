@@ -20,8 +20,9 @@ export default function Topbar({ title }: { title: string }) {
   };
 
   useEffect(() => {
-    check();
-    const t = setInterval(check, 30_000);
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void check();
+    const t = setInterval(() => void check(), 30_000);
     return () => clearInterval(t);
   }, []);
 

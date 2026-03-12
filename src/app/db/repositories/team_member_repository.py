@@ -51,6 +51,7 @@ class TeamMemberRepository:
 
         if existing:
             # Update existing member
+            existing.full_name = member_data.full_name
             existing.designation = member_data.designation
             existing.profile_type = member_data.profile_type
             existing.is_active = member_data.team_member_status == TeamMemberStatus.active
@@ -64,6 +65,7 @@ class TeamMemberRepository:
             # Create new member
             new_member = TeamMember(
                 team_member_id=member_data.team_member_id,
+                full_name=member_data.full_name,
                 designation=member_data.designation,
                 profile_type=member_data.profile_type,
                 is_active=member_data.team_member_status == TeamMemberStatus.active,
@@ -86,14 +88,30 @@ class TeamMemberRepository:
         """
         inserted = 0
         updated = 0
+        # Track canonical skill_ids already processed for this member in this
+        # call.  autoflush=False means pending inserts are invisible to queries
+        # within the same transaction; tracking seen IDs avoids a PK violation
+        # when the same skill name appears more than once in one member's list.
+        seen_effective_ids: set = set()
 
         for skill_data in skills:
-            # Ensure skill exists in skill_master
+            # Ensure skill exists in skill_master.
+            # Check by skill_id first, then by skill_name to avoid the
+            # unique-constraint violation when different clients use different
+            # IDs for the same canonical skill name.
             skill = (
                 self.db.query(SkillMaster)
                 .filter(SkillMaster.skill_id == skill_data.skill_id)
                 .first()
             )
+
+            if not skill:
+                # Check by name — skill may already exist with a different ID
+                skill = (
+                    self.db.query(SkillMaster)
+                    .filter(SkillMaster.skill_name == skill_data.skill_name)
+                    .first()
+                )
 
             if not skill:
                 # Create skill if it doesn't exist
@@ -124,12 +142,22 @@ class TeamMemberRepository:
                 self.db.add(skill)
                 self.db.flush()
 
+            # Use the canonical skill_id from DB (may differ from submitted ID)
+            effective_skill_id = skill.skill_id
+
+            # Skip duplicate canonical skills within this member's list.
+            # autoflush=False means in-session pending INSERTs are not visible
+            # to subsequent queries, so deduplicate in Python instead.
+            if effective_skill_id in seen_effective_ids:
+                continue
+            seen_effective_ids.add(effective_skill_id)
+
             # Upsert team_member_skill
             existing_skill = (
                 self.db.query(TeamMemberSkill)
                 .filter(
                     TeamMemberSkill.team_member_id == team_member_id,
-                    TeamMemberSkill.skill_id == skill_data.skill_id,
+                    TeamMemberSkill.skill_id == effective_skill_id,
                 )
                 .first()
             )
@@ -142,7 +170,7 @@ class TeamMemberRepository:
             else:
                 new_skill = TeamMemberSkill(
                     team_member_id=team_member_id,
-                    skill_id=skill_data.skill_id,
+                    skill_id=effective_skill_id,
                     rating=skill_data.rating,
                     experience_in_months=skill_data.experience_in_months,
                     is_deleted=skill_data.is_deleted,
@@ -192,8 +220,16 @@ class TeamMemberRepository:
         """
         inserted = 0
         updated = 0
+        # autoflush=False means pending INSERTs are invisible to subsequent queries in same tx.
+        # Track project_ids already processed to avoid duplicate key violations.
+        seen_project_ids: set = set()
 
         for alloc_data in allocations:
+            # Skip duplicate project allocations within the same member's list
+            if alloc_data.project_id in seen_project_ids:
+                continue
+            seen_project_ids.add(alloc_data.project_id)
+
             existing = (
                 self.db.query(TeamMemberAllocation)
                 .filter(

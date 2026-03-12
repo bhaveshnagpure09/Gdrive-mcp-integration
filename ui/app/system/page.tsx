@@ -91,7 +91,8 @@ export default function SystemPage() {
   }, []);
 
   useEffect(() => {
-    fetchAll();
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void fetchAll();
   }, [fetchAll]);
 
   const metrics = metricsRaw ? parsePrometheus(metricsRaw) : [];

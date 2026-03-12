@@ -37,33 +37,41 @@ async def bulk_upsert_skill_availability(request: BulkUpsertRequest, db: Session
     try:
         for member_data in request.team_members:
             try:
-                # Upsert team member
-                was_created, member = repo.upsert_team_member(member_data)
-                if was_created:
-                    team_members_inserted += 1
-                else:
-                    team_members_updated += 1
+                # Create a savepoint so a single member failure doesn't kill the batch
+                savepoint = db.begin_nested()
+                try:
+                    # Upsert team member
+                    was_created, member = repo.upsert_team_member(member_data)
+                    if was_created:
+                        team_members_inserted += 1
+                    else:
+                        team_members_updated += 1
 
-                # Upsert skills
-                if member_data.skills:
-                    s_inserted, s_updated = repo.upsert_skills(
-                        member_data.team_member_id, member_data.skills
-                    )
-                    skills_inserted += s_inserted
-                    skills_updated += s_updated
+                    # Upsert skills
+                    if member_data.skills:
+                        s_inserted, s_updated = repo.upsert_skills(
+                            member_data.team_member_id, member_data.skills
+                        )
+                        skills_inserted += s_inserted
+                        skills_updated += s_updated
 
-                # Upsert allocations
-                if member_data.allocations:
-                    a_inserted, a_updated = repo.upsert_allocations(
-                        member_data.team_member_id, member_data.allocations
-                    )
-                    allocations_inserted += a_inserted
-                    allocations_updated += a_updated
+                    # Upsert allocations
+                    if member_data.allocations:
+                        a_inserted, a_updated = repo.upsert_allocations(
+                            member_data.team_member_id, member_data.allocations
+                        )
+                        allocations_inserted += a_inserted
+                        allocations_updated += a_updated
+
+                    savepoint.commit()
+                except Exception as inner_e:
+                    savepoint.rollback()
+                    records_failed += 1
+                    print(f"Error processing team member {member_data.team_member_id}: {str(inner_e)}")
 
             except Exception as e:
                 records_failed += 1
-                # Log error but continue processing other records
-                print(f"Error processing team member {member_data.team_member_id}: {str(e)}")
+                print(f"Savepoint error for {member_data.team_member_id}: {str(e)}")
 
         # Commit all changes
         db.commit()

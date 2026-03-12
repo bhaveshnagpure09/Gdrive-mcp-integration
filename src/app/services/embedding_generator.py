@@ -7,6 +7,7 @@ from langchain_ollama import OllamaEmbeddings
 logger = logging.getLogger(__name__)
 
 _DEV_FALLBACK = os.environ.get("EMBEDDING_DEV_FALLBACK", "").lower() in ("1", "true", "yes")
+_OLLAMA_BASE_URL = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
 _EMBEDDING_DIM = 768
 
 
@@ -34,7 +35,7 @@ class EmbeddingGenerator:
     def __init__(self, model_name: str = MODEL_NAME):
         self._model_name = model_name
         if not _DEV_FALLBACK:
-            self.model = OllamaEmbeddings(model=model_name)
+            self.model = OllamaEmbeddings(model=model_name, base_url=_OLLAMA_BASE_URL)
         else:
             self.model = None
             logger.warning(

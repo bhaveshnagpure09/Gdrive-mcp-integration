@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import Topbar from "@/components/Topbar";
-import { Card, Button, Input, Badge, Alert, Spinner } from "@/components/ui";
+import { Card, Button, Input, Badge, Alert } from "@/components/ui";
 import { api, BulkUpsertRequest, BulkUpsertResponse } from "@/lib/api";
 import { formatMonths } from "@/lib/utils";
 import { Plus, X, Upload, CheckCircle2 } from "lucide-react";
@@ -47,7 +47,6 @@ export default function TeamMembersPage() {
   };
 
   const addSkill = (idx: number) => {
-    const member = members[idx];
     setMembers((prev) =>
       prev.map((m, i) =>
         i === idx

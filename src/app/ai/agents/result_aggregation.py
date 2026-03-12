@@ -38,7 +38,11 @@ def result_aggregation_node(state: GraphState) -> GraphState:
     
     candidate_scores = state.get("candidate_scores")
     if not candidate_scores:
-        logger.warning("No candidate_scores found in state")
+        logger.warning(
+            "No candidate_scores found in state — either no candidates passed the "
+            "relevance filter or the matching node produced no results. "
+            "Returning empty match list."
+        )
         state["final_results"] = []
         return state
     
@@ -61,6 +65,9 @@ def result_aggregation_node(state: GraphState) -> GraphState:
         # Add skill match details
         skill_score = candidate.get("skill_score", 0.0)
         matched_skills = candidate.get("match_reasons", {}).get("skills_matched", [])
+        # Fall back to skills_matched_names (includes fuzzy/metadata matches)
+        if not matched_skills:
+            matched_skills = candidate.get("skills_matched_names", [])
         if matched_skills:
             explanation.append(
                 f"Skills matched: {', '.join(matched_skills)} (score: {skill_score:.2f})"
@@ -89,10 +96,18 @@ def result_aggregation_node(state: GraphState) -> GraphState:
         # Create result entry
         result_entry = {
             "team_member_id": candidate["team_member_id"],
+            "full_name": candidate.get("full_name"),
+            "profile_url": candidate.get("profile_url"),
             "match_percentage": candidate.get("match_percentage", round(candidate["final_score"] * 100, 1)),
             "profile_score": round(candidate["final_score"], 4),
             "fit_level": fit_level,
             "availability_match": is_available,
+            "skill_score": round(candidate.get("skill_score", 0.0), 4),
+            "experience_score": round(candidate.get("experience_score", 0.0), 4),
+            "vector_similarity": round(candidate.get("vector_similarity", 0.0), 4),
+            "availability_score": round(candidate.get("availability_score", 0.0), 4),
+            "skills_matched": candidate.get("skills_matched_names", []),
+            "skill_gaps": candidate.get("skill_gaps_names", []),
             "explanation": explanation,
         }
         

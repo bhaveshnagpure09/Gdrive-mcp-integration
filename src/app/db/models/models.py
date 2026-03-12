@@ -16,6 +16,7 @@ from sqlalchemy import (
     Numeric,
     SmallInteger,
     String,
+    Text,
 )
 from sqlalchemy.orm import relationship
 
@@ -90,6 +91,8 @@ class RequisitionRequest(Base):
     correlation_id = Column(String(100), nullable=True)
     received_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     completed_at = Column(DateTime, nullable=True)
+    match_results = Column(JSON, nullable=True)
+    processing_status = Column(String(20), nullable=True, default="QUEUED")
 
     # Relationships
     client = relationship("AuthClient", back_populates="requisition_requests")
@@ -149,6 +152,7 @@ class TeamMember(Base):
     __tablename__ = "team_member"
 
     team_member_id = Column(String(50), primary_key=True)
+    full_name = Column(String(200), nullable=True)
     designation = Column(String(100), nullable=True)
     profile_type = Column(String(50), nullable=True)
     is_active = Column(Boolean, default=True)

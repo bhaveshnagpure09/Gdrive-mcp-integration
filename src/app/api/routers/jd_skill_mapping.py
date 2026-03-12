@@ -56,14 +56,12 @@ def process_requisition_with_graph(correlation_id: str, request: RequisitionRequ
         
         logger.info(f"Graph processing completed for correlation_id={correlation_id}")
         
-        # Store results in cache
-        final_results = final_state.get("final_results", [])
-        if final_results:
-            from app.ai.results_cache import store_results
-            store_results(correlation_id, final_results)
-            logger.info(f"Stored {len(final_results)} results for {correlation_id}")
-        else:
-            logger.warning(f"No final_results generated for {correlation_id}")
+        # Persist results to DB (works across all uvicorn workers)
+        final_results = final_state.get("final_results", []) or []
+        repo_bg = RequisitionRepository(db)
+        repo_bg.save_match_results(correlation_id, final_results)
+        db.commit()
+        logger.info(f"Stored {len(final_results)} results for {correlation_id}")
         
         # Log any errors
         error_message = final_state.get("error_message")
