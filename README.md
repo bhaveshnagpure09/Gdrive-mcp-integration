@@ -12,6 +12,7 @@ An AI-powered intelligent job requisition and skill mapping system that matches 
 - [Configuration](#configuration)
 - [Running the Application](#running-the-application)
 - [API Documentation](#api-documentation)
+- [Resume Ingestion via Google Drive (MCP)](#resume-ingestion-via-google-drive-mcp)
 - [Testing](#testing)
 - [Performance Testing](#performance-testing)
 - [Project Structure](#project-structure)
@@ -112,6 +113,7 @@ curl http://localhost:8000/health
 - **Intelligent Matching** - Scores team members against requisitions based on skills, experience, and availability
 - **Availability Evaluation** - Calculates capacity based on project allocations and timelines
 - **Result Aggregation** - Ranks and organizes matching results with detailed explanations
+- **Resume Ingestion (MCP)** - Ingest resumes from Google Drive (PDF, DOCX, Google Docs) via the MCP pipeline; auto-creates profile embeddings and team member records
 
 ### Technical Features
 - **Multi-Agent AI System** - LangGraph orchestration with 6 specialized agents
@@ -486,6 +488,259 @@ GET /api/v1/audit/logs?entity_type=requisition&limit=100
 ```
 
 For detailed API documentation, visit http://localhost:8000/docs after starting the server.
+
+## 📄 Resume Ingestion via Google Drive (MCP)
+
+The system can ingest team-member resumes directly from **Google Drive** through the MCP (Model Context Protocol) ingestion pipeline. Uploaded resumes are converted to structured profile embeddings that power the AI matching engine.
+
+### How the Pipeline Works
+
+```
+Google Drive (PDF / DOCX / Google Doc)
+         │
+         ▼  GoogleDriveMCPClient.fetch_resume()
+   Raw resume text
+         │
+         ▼  PIIScrubber → ResumeParser
+   Scrubbed profile text  +  parsed fields
+   (name, designation, skills, experience)
+         │
+         ▼  EmbeddingGenerator.generate()
+   1536-dim vector embedding
+         │
+         ▼  EmbeddingRepository.upsert()
+   team_member_embeddings  (PostgreSQL / pgvector)
+         │
+         ▼  Auto-create / update team_member row
+   team_member  (full_name synced from parsed resume)
+```
+
+> **Idempotency**: Re-ingesting the same file is a no-op when `modifiedTime` hasn't changed. Only updated files trigger a full re-process.
+
+---
+
+### Prerequisites
+
+| Component | Purpose |
+|-----------|---------|
+| Google Cloud project with Drive API enabled | Access resumes |
+| OAuth2 credentials JSON | Authenticate the MCP client |
+| `credentials.json` placed in the project root | Loaded by the API at startup |
+
+#### Get OAuth2 Credentials
+
+1. Go to [Google Cloud Console](https://console.cloud.google.com/) → **APIs & Services → Credentials**.
+2. Create an **OAuth 2.0 Client ID** (Desktop app type).
+3. Enable the **Google Drive API** for the project.
+4. Download the credentials file and save it as `credentials.json` in the project root.
+5. Set the path via environment variable if using a non-default location:
+   ```bash
+   GDRIVE_CREDENTIALS_PATH=/path/to/your/credentials.json
+   ```
+
+---
+
+### Supported Resume Formats
+
+| Format | MIME Type |
+|--------|-----------|
+| Google Docs | `application/vnd.google-apps.document` |
+| PDF | `application/pdf` |
+| DOCX | `application/vnd.openxmlformats-officedocument.wordprocessingml.document` |
+| DOC (legacy) | `application/msword` |
+
+Extra Python dependencies required for binary formats:
+
+```bash
+pip install pypdf python-docx
+```
+
+---
+
+### Ingest a Single Resume
+
+```bash
+POST /api/v1/ingest-resume
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "storage": "gdrive",
+  "doc_id": "1T1ApvOdTGRqX4KUa6-8UnXkzZHFofz-Q"
+}
+```
+
+You can pass either the bare Drive document ID **or** the full Google Docs / Drive URL — it is stripped automatically:
+
+```json
+{
+  "storage": "gdrive",
+  "doc_id": "https://docs.google.com/document/d/1T1ApvOdTGRqX4KUa6-8UnXkzZHFofz-Q/edit"
+}
+```
+
+To pin a resume to a specific team member ID rather than letting the system extract it:
+
+```json
+{
+  "storage": "gdrive",
+  "doc_id": "1T1ApvOdTGRqX4KUa6-8UnXkzZHFofz-Q",
+  "team_member_id": "bhavesh_nagpure"
+}
+```
+
+#### Response
+
+```json
+{
+  "ingested": 1,
+  "skipped": 0,
+  "failed": 0,
+  "details": [
+    {
+      "doc_id": "1T1ApvOdTGRqX4KUa6-8UnXkzZHFofz-Q",
+      "file_name": "1T1ApvOdTGRqX4KUa6-8UnXkzZHFofz-Q",
+      "status": "ok",
+      "team_member_id": "bhavesh_nagpure",
+      "extracted_name": "Bhavesh Nagpure",
+      "skills_found": 12,
+      "experience_months": 42
+    }
+  ]
+}
+```
+
+Possible `status` values per detail entry:
+
+| Status | Meaning |
+|--------|---------|
+| `ok` | Successfully ingested for the first time |
+| `updated` | File has changed since last ingestion — re-ingested |
+| `already_ingested` | File unchanged (`modifiedTime` match) — skipped |
+| `failed` | Ingestion error; check `reason` field |
+
+---
+
+### Batch-Ingest an Entire Drive Folder
+
+```bash
+POST /api/v1/ingest-resume
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "storage": "gdrive",
+  "fetch_all": true,
+  "folder_id": "1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs"
+}
+```
+
+Omit `folder_id` to sweep the entire Google Drive:
+
+```json
+{
+  "storage": "gdrive",
+  "fetch_all": true
+}
+```
+
+The full URL of a folder also works:
+
+```json
+{
+  "storage": "gdrive",
+  "fetch_all": true,
+  "folder_id": "https://drive.google.com/drive/folders/1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs"
+}
+```
+
+#### Batch Response
+
+```json
+{
+  "ingested": 45,
+  "skipped": 3,
+  "failed": 0,
+  "details": [
+    { "doc_id": "...", "status": "ok",               "extracted_name": "Alice Kumar",   "skills_found": 8  },
+    { "doc_id": "...", "status": "already_ingested",  "extracted_name": "Bob Sharma",    "skills_found": 11 },
+    { "doc_id": "...", "status": "updated",           "extracted_name": "Charlie Singh", "skills_found": 6  }
+  ]
+}
+```
+
+---
+
+### Using PowerShell (staging environment)
+
+```powershell
+$token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ0ZXN0LXVzZXIiLCJleHAiOjk5OTk5OTk5OTl9.7gDJtxuziSq8wDaUVIuBuO6XmBe3AaMUP-z2GM7YfuQ"
+$headers = @{ Authorization = "Bearer $token"; "Content-Type" = "application/json" }
+
+# Single resume
+$body = '{"storage":"gdrive","doc_id":"1T1ApvOdTGRqX4KUa6-8UnXkzZHFofz-Q"}'
+Invoke-RestMethod "http://localhost:8001/api/v1/ingest-resume" -Method Post -Headers $headers -Body $body
+
+# Batch ingest from a folder
+$body = '{"storage":"gdrive","fetch_all":true,"folder_id":"1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs"}'
+Invoke-RestMethod "http://localhost:8001/api/v1/ingest-resume" -Method Post -Headers $headers -Body $body
+```
+
+---
+
+### What Gets Stored
+
+After ingestion the following database rows are created or updated:
+
+| Table | What is stored |
+|-------|---------------|
+| `team_member` | Auto-created if not present (designation, experience_months). `full_name` populated from resume. |
+| `team_member_embeddings` | `profile_text` (scrubbed full-text), 1536-dim `embedding` vector, `metadata_json` (name, designation, skills list, experience, source doc ID, Drive `modifiedTime`) |
+
+The `metadata_json` structure stored per embedding:
+
+```json
+{
+  "source_doc_id": "1T1ApvOdTGRqX4KUa6-8UnXkzZHFofz-Q",
+  "modified_time": "2026-01-15T09:22:11.000Z",
+  "extracted_name": "Bhavesh Nagpure",
+  "designation": "Senior Software Engineer",
+  "experience_months": 42,
+  "skills": ["Python", "RAG", "LangChain", "Machine Learning", "FastAPI"],
+  "team_member_id_source": "extracted",
+  "storage_source": "gdrive"
+}
+```
+
+---
+
+### Troubleshooting
+
+#### `503 Google Drive authentication failed`
+
+- Verify `credentials.json` exists at the path pointed to by `GDRIVE_CREDENTIALS_PATH` (default: project root).
+- Ensure the credentials are for a **Desktop** OAuth2 client and the Drive API is enabled.
+- Re-run the OAuth2 consent flow to refresh expired tokens.
+
+#### `502 Bad Gateway` on batch ingest
+
+- The Drive API rate limit may have been hit. Wait a few seconds and retry.
+- Check that the `folder_id` is accessible to the authenticated account.
+
+#### `status: "failed"` with `reason: "Embedding error: ..."`
+
+- The `OPENAI_API_KEY` is missing or invalid. Verify it in `.env`.
+
+#### `status: "already_ingested"` for a file you just updated
+
+- The Drive `modifiedTime` must change for a re-ingest to trigger. Make and save any edit to the Google Doc.
+
+#### Extracted name is empty / skills list looks wrong
+
+- The resume parser uses heuristic extraction. Ensure the resume follows a standard format with clear sections (e.g. **Skills**, **Experience**).
+- Skills listed as `Python (3.5, 5)` may be split incorrectly due to the comma in the rating notation. Consider using a plain list format instead.
+
+---
 
 ## 🧪 Testing
 
@@ -951,4 +1206,4 @@ For issues or questions:
 ---
 
 **Version**: 0.1.0  
-**Last Updated**: February 3, 2026
+**Last Updated**: March 12, 2026
