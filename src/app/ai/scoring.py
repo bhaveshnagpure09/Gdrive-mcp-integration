@@ -97,7 +97,7 @@ def calculate_experience_score(
     
     # If only maximum specified (unusual case)
     if min_experience_months is None and max_experience_months is not None:
-        return 1.0 if team_member_experience_months <= max_experience_months else 1.0
+        return 1.0 if team_member_experience_months <= max_experience_months else 0.5
     
     # Both min and max specified
     if min_experience_months is not None and max_experience_months is not None:

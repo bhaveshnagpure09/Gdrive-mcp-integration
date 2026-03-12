@@ -1,9 +1,12 @@
 """Skill availability router."""
 
-from datetime import datetime
+import logging
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+
+logger = logging.getLogger(__name__)
 
 from app.api.schemas.team_member import BulkUpsertRequest, BulkUpsertResponse, UpsertSummary
 from app.db.repositories.team_member_repository import TeamMemberRepository
@@ -67,11 +70,11 @@ async def bulk_upsert_skill_availability(request: BulkUpsertRequest, db: Session
                 except Exception as inner_e:
                     savepoint.rollback()
                     records_failed += 1
-                    print(f"Error processing team member {member_data.team_member_id}: {str(inner_e)}")
+                    logger.error("Error processing team member %s: %s", member_data.team_member_id, inner_e)
 
             except Exception as e:
                 records_failed += 1
-                print(f"Savepoint error for {member_data.team_member_id}: {str(e)}")
+                logger.error("Savepoint error for %s: %s", member_data.team_member_id, e)
 
         # Commit all changes
         db.commit()
@@ -87,7 +90,7 @@ async def bulk_upsert_skill_availability(request: BulkUpsertRequest, db: Session
             allocations_updated=allocations_updated,
             records_failed=records_failed,
             batch_id=request.metadata.batch_id,
-            processed_at=datetime.utcnow(),
+            processed_at=datetime.now(timezone.utc),
         )
 
         return BulkUpsertResponse(

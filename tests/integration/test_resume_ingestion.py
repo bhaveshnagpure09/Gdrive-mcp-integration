@@ -54,6 +54,7 @@ def _mock_mcp_single(doc_id: str = "doc_123"):
     mock = MagicMock()
     mock.fetch_resume.return_value = FAKE_RESUME_TEXT
     mock.list_resumes.return_value = [{"id": doc_id, "name": "Resume.docx"}]
+    mock.get_file_info.return_value = {"modifiedTime": None, "mimeType": None}
     return mock
 
 

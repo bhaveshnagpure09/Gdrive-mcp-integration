@@ -1,6 +1,6 @@
 """Integration tests for bulk upsert endpoint."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 
 def test_bulk_upsert_success(client, db):
@@ -8,7 +8,7 @@ def test_bulk_upsert_success(client, db):
     payload = {
         "metadata": {
             "batch_id": "BATCH-001",
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "total_records": 1,
             "batch_number": 1,
             "total_batches": 1,
@@ -74,7 +74,7 @@ def test_bulk_upsert_update_existing(client, db):
     payload = {
         "metadata": {
             "batch_id": "BATCH-002",
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "total_records": 1,
             "batch_number": 1,
             "total_batches": 1,

@@ -1,6 +1,6 @@
 """Repository for team member operations."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List
 
 from sqlalchemy import func
@@ -73,7 +73,7 @@ class TeamMemberRepository:
                 base_location=member_data.base_location,
                 work_type=work_type,
                 profile_url=member_data.profile_url,
-                created_at=datetime.utcnow(),
+                created_at=datetime.now(timezone.utc),
             )
             self.db.add(new_member)
             self.db.flush()

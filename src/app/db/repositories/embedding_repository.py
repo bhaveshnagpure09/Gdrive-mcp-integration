@@ -2,7 +2,7 @@
 
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from sqlalchemy import text
@@ -53,7 +53,7 @@ class EmbeddingRepository:
             existing.embedding = embedding_str
             existing.profile_text = profile_text
             existing.metadata_json = metadata or {}
-            existing.created_at = datetime.utcnow()
+            existing.created_at = datetime.now(timezone.utc)
             self.db.flush()
             logger.info("Updated embedding", extra={"team_member_id": team_member_id})
             return False, existing
@@ -63,7 +63,7 @@ class EmbeddingRepository:
             embedding=embedding_str,
             profile_text=profile_text,
             metadata_json=metadata or {},
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(timezone.utc),
         )
         self.db.add(record)
         self.db.flush()

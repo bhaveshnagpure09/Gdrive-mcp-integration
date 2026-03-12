@@ -5,7 +5,7 @@ import logging
 from sqlalchemy.orm import Session
 
 from app.ai.availability import evaluate_availability
-from app.ai.scoring import calculate_candidate_score
+from app.ai.scoring import calculate_candidate_score, calculate_final_score
 from app.ai.state import GraphState
 from app.db.models import SkillMaster, TeamMember, TeamMemberEmbedding, TeamMemberSkill
 from app.db.repositories.embedding_repository import EmbeddingRepository
@@ -222,7 +222,6 @@ def matching_scoring_node(state: GraphState) -> GraphState:
                 effective_skill_score = max(score_result["skill_score"], metadata_skill_score)
 
                 if effective_skill_score > score_result["skill_score"]:
-                    from app.ai.scoring import calculate_final_score
                     score_result["final_score"] = calculate_final_score(
                         effective_skill_score,
                         score_result["experience_score"],

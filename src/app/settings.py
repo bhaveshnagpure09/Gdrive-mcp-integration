@@ -2,11 +2,14 @@
 
 import os
 from typing import Optional
+from pydantic import ConfigDict
 from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
     """Application settings with secure secrets handling."""
+
+    model_config = ConfigDict(env_file=".env")
 
     # API Configuration
     api_v1_prefix: str = "/api/v1"
@@ -24,10 +27,7 @@ class Settings(BaseSettings):
     
     # Secrets Manager Configuration
     secrets_backend: str = "env"  # Options: env, aws, vault
-    
-    class Config:
-        env_file = ".env"
-    
+
     def get_database_url(self) -> str:
         """
         Get database URL from secrets manager or fallback to settings.

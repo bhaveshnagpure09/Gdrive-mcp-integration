@@ -1,7 +1,7 @@
 """Tests for AI audit trail functionality."""
 
 import pytest
-from datetime import datetime
+from datetime import datetime, timezone
 
 from app.ai.audit import save_checkpoint, get_checkpoints_for_request, calculate_total_tokens
 from app.db.models.models import LangGraphCheckpoint, RequisitionRequest
@@ -16,7 +16,7 @@ def test_save_checkpoint_creates_record(db):
         status=1,
         client_name="TestClient",
         correlation_id="test-audit-corr-001",
-        received_at=datetime.utcnow(),
+        received_at=datetime.now(timezone.utc),
     )
     db.add(requisition)
     db.commit()
@@ -52,7 +52,7 @@ def test_get_checkpoints_for_request(db):
         status=1,
         client_name="TestClient",
         correlation_id="test-audit-corr-002",
-        received_at=datetime.utcnow(),
+        received_at=datetime.now(timezone.utc),
     )
     db.add(requisition)
     db.commit()
@@ -85,7 +85,7 @@ def test_calculate_total_tokens(db):
         status=1,
         client_name="TestClient",
         correlation_id="test-audit-corr-003",
-        received_at=datetime.utcnow(),
+        received_at=datetime.now(timezone.utc),
     )
     db.add(requisition)
     db.commit()
@@ -109,7 +109,7 @@ def test_checkpoint_ordering(db):
         status=1,
         client_name="TestClient",
         correlation_id="test-audit-corr-004",
-        received_at=datetime.utcnow(),
+        received_at=datetime.now(timezone.utc),
     )
     db.add(requisition)
     db.commit()
@@ -135,7 +135,7 @@ def test_save_checkpoint_with_null_token_count(db):
         status=1,
         client_name="TestClient",
         correlation_id="test-audit-corr-005",
-        received_at=datetime.utcnow(),
+        received_at=datetime.now(timezone.utc),
     )
     db.add(requisition)
     db.commit()

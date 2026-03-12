@@ -1,7 +1,7 @@
 """Audit trail utilities for LangGraph execution."""
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, Any, Optional
 
 from sqlalchemy.orm import Session
@@ -33,7 +33,7 @@ def save_checkpoint(
             node_name=node_name,
             state_json=state,
             token_count=token_count,
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(timezone.utc),
         )
         db.add(checkpoint)
         db.commit()

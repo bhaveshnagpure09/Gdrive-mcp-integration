@@ -2,7 +2,7 @@
 
 import hashlib
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from sqlalchemy.orm import Session
@@ -28,7 +28,7 @@ class RequisitionRepository:
         """
         # Generate correlation ID
         correlation_id = (
-            f"CORR-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}-{request_data.request_id[:8]}"
+            f"CORR-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}-{request_data.request_id[:8]}"
         )
 
         # Create requisition request
@@ -38,7 +38,7 @@ class RequisitionRepository:
             status=1,  # RECEIVED status
             client_name=request_data.client_name or request_data.job_description.client_name,
             correlation_id=correlation_id,
-            received_at=datetime.utcnow(),
+            received_at=datetime.now(timezone.utc),
         )
         self.db.add(req)
         self.db.flush()
@@ -101,7 +101,7 @@ class RequisitionRepository:
         if req:
             req.match_results = results
             req.processing_status = "COMPLETED"
-            req.completed_at = datetime.utcnow()
+            req.completed_at = datetime.now(timezone.utc)
             self.db.flush()
 
     def get_match_results(self, correlation_id: str) -> Optional[list]:

@@ -69,6 +69,7 @@ def process_requisition_with_graph(correlation_id: str, request: RequisitionRequ
             logger.error(f"Graph execution error for {correlation_id}: {error_message}")
         
     except Exception as e:
+        db.rollback()
         logger.error(f"Error processing requisition with graph: {str(e)}", exc_info=True)
     finally:
         db.close()
