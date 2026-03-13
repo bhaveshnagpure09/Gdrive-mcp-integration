@@ -57,7 +57,7 @@ def matching_scoring_node(state: GraphState) -> GraphState:
     # Query database for all active team members
     db: Session = SessionLocal()
     try:
-        team_members = db.query(TeamMember).filter(TeamMember.is_active == True).all()
+        team_members = db.query(TeamMember).filter(TeamMember.is_active).all()
 
         logger.info(f"Found {len(team_members)} active team members to evaluate")
 

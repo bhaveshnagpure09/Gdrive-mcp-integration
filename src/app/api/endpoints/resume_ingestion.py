@@ -2,7 +2,6 @@
 
 import logging
 import os
-import re
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -10,7 +9,6 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.core.mcp_client import GoogleDriveMCPClient, GDriveError, extract_drive_id
-from app.core.pii_scrubber import PIIScrubber
 from app.db.models.models import ResumeChunkEmbedding, TeamMember as TeamMemberModel
 from app.db.repositories.embedding_repository import EmbeddingRepository
 from app.db.session import get_db

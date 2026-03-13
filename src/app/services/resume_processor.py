@@ -8,7 +8,7 @@ from app.core.mcp_client import GoogleDriveMCPClient, GDriveError
 from app.core.pii_scrubber import PIIScrubber, ResumeParser
 
 if TYPE_CHECKING:
-    from app.services.resume_chunker import ResumeChunk
+    pass  # noqa: F401
 
 logger = logging.getLogger(__name__)
 

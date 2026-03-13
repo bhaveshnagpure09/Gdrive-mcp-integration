@@ -309,8 +309,6 @@ class FaissVectorStore:
 
     def _rebuild_without(self, exclude_ids: set[int]) -> None:
         """Rebuild index from scratch, excluding *exclude_ids*."""
-        from faiss import read_index  # type: ignore   # noqa: PLC0415
-        keep_ids   = [fid for fid in self._meta if fid not in exclude_ids]
         # We only have the metadata, not the original vectors, so we can't
         # truly rebuild — mark the store as stale and log a warning.
         logger.warning(

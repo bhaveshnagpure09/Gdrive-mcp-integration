@@ -297,11 +297,16 @@ class SemanticRetrievalPipeline:
         preferred: list[str],
     ) -> str:
         parts: list[str] = []
-        if title:     parts.append(f"Job Title: {title}")
-        if role:      parts.append(f"Role: {role}")
-        if mandatory: parts.append(f"Required Skills: {', '.join(mandatory)}")
-        if preferred: parts.append(f"Preferred Skills: {', '.join(preferred)}")
-        if jd_text:   parts.append(f"Job Description: {jd_text[:1500]}")
+        if title:
+            parts.append(f"Job Title: {title}")
+        if role:
+            parts.append(f"Role: {role}")
+        if mandatory:
+            parts.append(f"Required Skills: {', '.join(mandatory)}")
+        if preferred:
+            parts.append(f"Preferred Skills: {', '.join(preferred)}")
+        if jd_text:
+            parts.append(f"Job Description: {jd_text[:1500]}")
         return "\n".join(parts)
 
 

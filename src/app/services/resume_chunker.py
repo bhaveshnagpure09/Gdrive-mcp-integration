@@ -151,10 +151,14 @@ class ResumeChunker:
         skills_str  = ", ".join(skills[:25])
 
         lines = []
-        if name:        lines.append(f"Name: {name}")
-        if designation: lines.append(f"Role: {designation}")
-        if exp_months:  lines.append(f"Experience: {exp_months} months ({exp_months // 12} years)")
-        if skills_str:  lines.append(f"Skills: {skills_str}")
+        if name:
+            lines.append(f"Name: {name}")
+        if designation:
+            lines.append(f"Role: {designation}")
+        if exp_months:
+            lines.append(f"Experience: {exp_months} months ({exp_months // 12} years)")
+        if skills_str:
+            lines.append(f"Skills: {skills_str}")
         # Append first 500 chars of free text as context
         if scrubbed_text:
             lines.append("Profile: " + scrubbed_text[:500].replace("\n", " "))
