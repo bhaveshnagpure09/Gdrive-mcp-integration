@@ -141,7 +141,88 @@ def matching_scoring_node(state: GraphState) -> GraphState:
             logger.warning(f"JD embedding/similarity failed, skipping: {e}")
 
         candidate_scores = []
-        
+
+        # ------------------------------------------------------------------ #
+        # Semantic pipeline (BGE + FAISS hybrid search + cross-encoder rerank) #
+        # Try this first; if the FAISS store has indexed chunks we use it and  #
+        # skip the heavy per-member scoring loop below.                        #
+        # ------------------------------------------------------------------ #
+        try:
+            from app.services.vector_store import FaissVectorStore
+            from app.services.semantic_pipeline import run_semantic_pipeline
+
+            _store = FaissVectorStore.get_instance()
+            if _store.total_vectors > 0:
+                logger.info(
+                    "FAISS store has %d vectors — running semantic pipeline",
+                    _store.total_vectors,
+                )
+
+                # Pre-compute availability for every active member so the
+                # semantic pipeline can apply availability scoring.
+                avail_filter: dict[str, float] = {}
+                for _m in team_members:
+                    try:
+                        _av = evaluate_availability(
+                            db,
+                            _m.team_member_id,
+                            expected_start_date,
+                            requisition_duration_month,
+                            threshold_percentage=80.0,
+                        )
+                        avail_filter[_m.team_member_id] = _av["available_capacity"]
+                    except Exception:
+                        avail_filter[_m.team_member_id] = 100.0
+
+                sem_results = run_semantic_pipeline(
+                    jd_text=jd_embed_text,
+                    jd_title=_title,
+                    jd_role=_role,
+                    mandatory_skills=_mandatory_names,
+                    preferred_skills=_preferred_names,
+                    min_experience_months=min_experience_months,
+                    max_experience_months=max_experience_months,
+                    db=db,
+                    availability_filter=avail_filter,
+                )
+
+                if sem_results:
+                    # Enrich with profile_url and normalised skill gap names
+                    member_map = {m.team_member_id: m for m in team_members}
+                    for c in sem_results:
+                        member = member_map.get(c["team_member_id"])
+                        c["profile_url"] = (member.profile_url if member else None) or ""
+                        c["skills_matched_names"] = c.get("matched_skills", [])
+                        matched_lower = {s.lower() for s in c.get("matched_skills", [])}
+                        c["skill_gaps_names"] = [
+                            s for s in _mandatory_names
+                            if s.lower() not in matched_lower
+                        ]
+
+                    state["candidate_scores"] = sem_results
+                    logger.info(
+                        "Semantic pipeline returned %d candidates; skipping legacy loop",
+                        len(sem_results),
+                    )
+                    return state
+                else:
+                    logger.info(
+                        "Semantic pipeline returned no candidates; falling back to legacy scoring"
+                    )
+            else:
+                logger.info(
+                    "FAISS store is empty — falling back to legacy scoring loop"
+                )
+        except Exception as _sem_exc:
+            logger.warning(
+                "Semantic pipeline error — falling back to legacy scoring: %s",
+                _sem_exc,
+                exc_info=True,
+            )
+
+        # ------------------------------------------------------------------ #
+        # Legacy deterministic scoring loop (used when FAISS is not populated) #
+        # ------------------------------------------------------------------ #
         for member in team_members:
             try:
                 # Get member's skills

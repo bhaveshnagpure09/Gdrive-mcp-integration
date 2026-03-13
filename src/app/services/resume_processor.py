@@ -2,10 +2,13 @@
 
 import logging
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 
 from app.core.mcp_client import GoogleDriveMCPClient, GDriveError
 from app.core.pii_scrubber import PIIScrubber, ResumeParser
+
+if TYPE_CHECKING:
+    from app.services.resume_chunker import ResumeChunk
 
 logger = logging.getLogger(__name__)
 
@@ -20,6 +23,7 @@ class ProcessedResume:
     parsed_fields: dict = field(default_factory=dict)
     metadata: dict = field(default_factory=dict)
     error: Optional[str] = None
+    chunks: list = field(default_factory=list)  # list[ResumeChunk] — populated after chunking
 
     @property
     def success(self) -> bool:
@@ -111,10 +115,21 @@ class ResumeProcessor:
             "storage_source": storage_source,
             "document_id": doc_id,
         }
+
+        # Chunk the scrubbed resume into labelled sections for FAISS indexing.
+        # Import here to avoid a circular dependency at module load time.
+        chunks: list = []
+        try:
+            from app.services.resume_chunker import ResumeChunker
+            chunks = ResumeChunker.chunk(scrubbed, parsed_fields)
+        except Exception as _chunk_err:
+            logger.warning("Resume chunking failed for %s: %s", doc_id, _chunk_err)
+
         return ProcessedResume(
             doc_id=doc_id,
             profile_text=profile_text,
             scrubbed_text=scrubbed,
             parsed_fields=parsed_fields,
             metadata=metadata,
+            chunks=chunks,
         )

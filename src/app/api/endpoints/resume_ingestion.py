@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.core.mcp_client import GoogleDriveMCPClient, GDriveError, extract_drive_id
 from app.core.pii_scrubber import PIIScrubber
-from app.db.models.models import TeamMember as TeamMemberModel
+from app.db.models.models import ResumeChunkEmbedding, TeamMember as TeamMemberModel
 from app.db.repositories.embedding_repository import EmbeddingRepository
 from app.db.session import get_db
 from app.services.embedding_generator import EmbeddingGenerator
@@ -85,6 +85,92 @@ def _ensure_team_member(db: Session, team_member_id: str, parsed_fields: dict) -
         db.add(new_member)
         db.flush()
         logger.info("Auto-created team_member", extra={"team_member_id": team_member_id})
+
+
+def _index_chunks_into_faiss(
+    *,
+    doc_id: str,
+    effective_member_id: str,
+    result,  # ProcessedResume
+    embedder: EmbeddingGenerator,
+    db: Session,
+) -> None:
+    """Index resume chunks into FAISS and persist metadata rows to PostgreSQL.
+
+    This is a best-effort operation: any exception is logged but not re-raised
+    so the main ingestion flow is never blocked by vector-store errors.
+    """
+    if not result.chunks:
+        logger.debug("No chunks to index for doc_id=%s", doc_id)
+        return
+
+    try:
+        from app.services.vector_store import FaissVectorStore, ChunkMetadata
+
+        parsed_fields = result.parsed_fields
+        skills_list: list[str] = parsed_fields.get("skills") or []
+        years_exp: float = (parsed_fields.get("experience_months") or 0) / 12.0
+        role: str = parsed_fields.get("designation") or ""
+        full_name: str = parsed_fields.get("name") or ""
+
+        chunk_texts = [c.text for c in result.chunks]
+        vectors = embedder.generate_passage_batch(chunk_texts)
+
+        chunk_metas = [
+            ChunkMetadata(
+                candidate_id=effective_member_id,
+                section_type=c.section_type,
+                skills=skills_list,
+                years_of_experience=years_exp,
+                role=role,
+                full_name=full_name,
+                doc_id=doc_id,
+                raw_text=c.text[:512],
+            )
+            for c in result.chunks
+        ]
+
+        store = FaissVectorStore.get_instance(dim=embedder.dim)
+        faiss_ids = store.upsert_chunks(
+            candidate_id=effective_member_id,
+            chunks_meta=chunk_metas,
+            vectors=vectors,
+        )
+
+        # Persist ResumeChunkEmbedding rows to PostgreSQL for SQL-side filtering
+        import json as _json
+        try:
+            # Remove any existing rows for this doc so re-ingestion stays idempotent
+            db.query(ResumeChunkEmbedding).filter(
+                ResumeChunkEmbedding.doc_id == doc_id
+            ).delete()
+
+            for chunk, meta, fid, vec in zip(result.chunks, chunk_metas, faiss_ids, vectors):
+                db.add(ResumeChunkEmbedding(
+                    team_member_id=effective_member_id,
+                    doc_id=doc_id,
+                    section_type=chunk.section_type,
+                    chunk_text=chunk.text,
+                    embedding=_json.dumps(vec.tolist() if hasattr(vec, "tolist") else list(vec)),
+                    faiss_id=int(fid),
+                    skills=skills_list,
+                    years_of_experience=years_exp,
+                    role=role,
+                    full_name=full_name,
+                    metadata_json={"doc_id": doc_id, "source": "gdrive"},
+                ))
+            db.commit()
+            logger.info(
+                "Indexed %d chunks for doc_id=%s (FAISS + DB)",
+                len(result.chunks),
+                doc_id,
+            )
+        except Exception as db_exc:
+            db.rollback()
+            logger.warning("Failed to persist chunk embeddings to DB: %s", db_exc)
+
+    except Exception as exc:
+        logger.warning("Chunk FAISS indexing failed for doc_id=%s: %s", doc_id, exc)
 
 
 def _ingest_one(
@@ -177,6 +263,17 @@ def _ingest_one(
         db.rollback()
         logger.error("DB insertion failed", extra={"doc_id": doc_id, "error": str(exc)})
         return {**base, "status": "failed", "reason": f"DB error: {exc}"}
+
+    # ------------------------------------------------------------------ #
+    # FAISS + DB chunk indexing (best-effort — does not fail the request)  #
+    # ------------------------------------------------------------------ #
+    _index_chunks_into_faiss(
+        doc_id=doc_id,
+        effective_member_id=effective_member_id,
+        result=result,
+        embedder=embedder,
+        db=db,
+    )
 
     return {
         **base,

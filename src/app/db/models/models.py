@@ -261,3 +261,43 @@ class TeamMemberEmbedding(Base):
 
     # Relationships
     team_member = relationship("TeamMember", backref="embeddings")
+
+
+class ResumeChunkEmbedding(Base):
+    """Per-section chunk embeddings for advanced semantic retrieval.
+
+    Each resume is split into meaningful sections (skills, experience,
+    projects, education, certifications, summary, full_profile) and each
+    section is stored as a separate row so that fine-grained semantic
+    similarity can be computed at retrieval time.
+
+    The ``faiss_id`` column tracks the integer offset in the FAISS index so
+    that metadata can be loaded from the database when a FAISS result is
+    returned (fallback for environments without persistent FAISS).
+    """
+
+    __tablename__ = "resume_chunk_embeddings"
+
+    id             = Column(Integer, primary_key=True, autoincrement=True)
+    team_member_id = Column(
+        String(50),
+        ForeignKey("team_member.team_member_id"),
+        nullable=False,
+        index=True,
+    )
+    doc_id         = Column(String(255), nullable=True, index=True)
+    section_type   = Column(String(50),  nullable=False)   # skills | experience | projects | …
+    chunk_text     = Column(Text,        nullable=False)
+    # JSON-encoded float array (same pattern as TeamMemberEmbedding)
+    embedding      = Column(Text,        nullable=True)
+    faiss_id       = Column(Integer,     nullable=True, index=True)
+    # Structured metadata for SQL-side filtering
+    skills         = Column(JSON,        nullable=True)     # list[str]
+    years_of_experience = Column(Numeric(5, 1), nullable=True)
+    role           = Column(String(200), nullable=True)
+    full_name      = Column(String(200), nullable=True)
+    metadata_json  = Column(JSON,        nullable=True)
+    created_at     = Column(DateTime,    nullable=False, default=datetime.utcnow)
+
+    team_member = relationship("TeamMember", backref="chunk_embeddings")
+

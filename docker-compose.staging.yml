@@ -50,8 +50,12 @@ services:
       JWT_SECRET_KEY: ${JWT_SECRET_KEY:-staging-secret-change-in-prod}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       GDRIVE_CREDENTIALS_PATH: ${GDRIVE_CREDENTIALS_PATH:-/app/credentials.json}
+      VECTOR_STORE_DIR: /app/data/faiss_index
+      EMBEDDING_BACKEND: ${EMBEDDING_BACKEND:-ollama}
+      SKIP_RERANKER: ${SKIP_RERANKER:-0}
     volumes:
       - ${GDRIVE_CREDENTIALS_PATH:-./credentials.json}:/app/credentials.json:ro
+      - faiss_index_data:/app/data/faiss_index
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -82,3 +86,4 @@ services:
 
 volumes:
   postgres_staging_data:
+  faiss_index_data:
