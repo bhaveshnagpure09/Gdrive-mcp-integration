@@ -20,17 +20,22 @@ Write-Host "[1/4] Starting PostgreSQL (Docker)..." -ForegroundColor Yellow
 Set-Location $Root
 docker compose up -d postgres | Out-Null
 
-# Wait for healthy
+# Wait for healthy (Docker health status OR direct pg_isready)
 $maxWait = 30
 $waited  = 0
+$ready   = $false
 do {
     Start-Sleep -Seconds 2
     $waited += 2
     $status = docker inspect --format="{{.State.Health.Status}}" ib-job-skill-mapping-system-postgres-1 2>$null
-} while ($status -ne "healthy" -and $waited -lt $maxWait)
+    if ($status -eq "healthy") { $ready = $true; break }
+    # Fallback: direct port check via pg_isready inside container
+    $pgCheck = docker exec ib-job-skill-mapping-system-postgres-1 pg_isready -U user -d ib_job_skill_mapping 2>$null
+    if ($LASTEXITCODE -eq 0) { $ready = $true; break }
+} while ($waited -lt $maxWait)
 
-if ($status -ne "healthy") {
-    Write-Host "  ERROR: Postgres did not become healthy after ${maxWait}s. Check Docker." -ForegroundColor Red
+if (-not $ready) {
+    Write-Host "  ERROR: Postgres did not become ready after ${maxWait}s. Check Docker." -ForegroundColor Red
     exit 1
 }
 Write-Host "  Postgres is healthy on localhost:5433" -ForegroundColor Green
@@ -72,7 +77,7 @@ Start-Process powershell -ArgumentList "-NoExit", "-Command", $apiCmd -WindowSty
 # Wait for API to respond
 Write-Host "  Waiting for API to be ready..." -ForegroundColor DarkGray
 $apiReady = $false
-for ($i = 0; $i -lt 20; $i++) {
+for ($i = 0; $i -lt 30; $i++) {
     Start-Sleep -Seconds 2
     try {
         $r = Invoke-WebRequest -Uri "http://localhost:8000/health" -UseBasicParsing -TimeoutSec 2 -ErrorAction Stop
